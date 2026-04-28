@@ -1,0 +1,179 @@
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║              DATA CARD — Enhanced NASA CMAPSS FD001 Dataset                ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SOURCE DATASET
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Name        : NASA CMAPSS (Commercial Modular Aero-Propulsion System
+               Simulation) — Subset FD001
+ Source      : NASA Ames Prognostics Data Repository
+ Citation    : Saxena et al. (2008), PHM08 challenge data
+ Condition   : One operating condition, one fault mode (HPC degradation)
+ Engines     : 100 training engines
+ Raw rows    : 20,631 (train)
+ Raw columns : 26  (engine_id, cycle, 3 op-settings, 21 sensors)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ ENHANCEMENT METHODOLOGY
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ Step 1 — Trajectory Segmentation
+   Each engine's run (e.g. 200 cycles) is split into 2–4 non-overlapping
+   segments at randomly chosen cut points (min 10 cycles from either end).
+   Each segment represents one failure-to-repair cycle (MTBF interval).
+   Segments are shorter for shorter engines to avoid degenerate 1-row slices.
+
+ Step 2 — Failure Labelling
+   The last row of every segment is flagged as is_failure_end = True.
+   All segments end in failure (run-to-failure assumption, matching the
+   original CMAPSS design intent).
+
+ Step 3 — Defect Classification  (sensor-rule heuristics)
+   Classification is applied to the LAST 20 % of each segment
+   (the region where degradation signal is richest).
+
+   Sensor proxy mapping:
+     sensor_2  → HPC outlet temperature  → OVERHEATING
+     sensor_14 → Pressure ratio deviation → BEARING MISALIGNMENT
+     sensor_11 → Bypass ratio             → WEAR
+
+   Priority rules (first match wins):
+     1. mean(sensor_2)  > 90th-pct threshold  → overheating
+     2. mean(sensor_14) > 90th-pct threshold  → bearing_misalignment
+     3. mean(sensor_11) > 75th-pct threshold  → wear
+     4. otherwise                             → unclassified
+
+   Thresholds are computed from the TRAINING set only to prevent
+   data leakage.
+
+ Step 4 — Repair Duration Simulation
+   Repair durations are sampled from Normal distributions fitted to
+   domain-inspired means and standard deviations:
+
+     Defect type           Mean (cycles)   Std
+     ─────────────────── ─────────────── ─────
+     overheating                 8          2
+     bearing_misalignment       12          3
+     wear                       20          5
+     unclassified                6          2
+
+   Duration is clipped to minimum 1 cycle.
+
+ Step 5 — Downtime Insertion
+   Between consecutive segments, 'repair' rows are inserted.
+   These rows have NaN sensor values (machine offline).
+   A monotonic virtual_cycle counter tracks wall-clock time across
+   segments and downtimes, enabling MTBF / MTTR computation.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ OUTPUT FILES
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ 1. enriched_timeseries.csv   (22,161 rows)
+    ─────────────────────────
+    All original columns PLUS:
+
+    Column           Type     Description
+    ───────────────  ───────  ──────────────────────────────────────────────
+    virtual_cycle    int      Monotonic wall-clock cycle (includes downtime)
+    segment_id       int      Which segment (1 = first failure cycle)
+    machine_state    str      'running' | 'repair'
+    defect_type      str      'overheating' | 'bearing_misalignment' |
+                              'wear' | 'unclassified'
+    is_failure_end   bool     True only on the failure row of each segment
+    segment_rul      float    Cycles remaining until end of THIS segment
+                              (NaN during repair rows)
+
+ 2. event_log.csv   (496 rows)
+    ───────────────
+    One row per event (failure or repair).
+
+    Column           Type     Description
+    ───────────────  ───────  ──────────────────────────────────────────────
+    engine_id        int      Engine identifier
+    segment_id       int      Segment that generated this event
+    event_type       str      'failure' | 'repair'
+    defect_type      str      Defect that caused the failure / repair
+    virtual_cycle    int      Wall-clock cycle when event started
+    duration_cycles  float    Repair duration (NaN for failure events)
+
+ 3. kpi_summary.csv   (100 rows — one per engine)
+    ────────────────
+    Column              Description
+    ──────────────────  ────────────────────────────────────────────────────
+    engine_id           Engine identifier
+    n_failure_cycles    Number of failure events for this engine
+    MTBF_cycles         Mean Time Between Failures (mean operational segment
+                        length in virtual cycles)
+    MTTR_cycles         Mean Time To Repair (mean repair duration in cycles)
+    MTU_cycles          Mean Time to Unplanned failure  ← equals MTBF here
+                        because all failures are unplanned (run-to-failure)
+    availability_pct    Uptime / (Uptime + Downtime) × 100
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ KPI DEFINITIONS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+ MTBF (Mean Time Between Failures)
+   Average number of operational cycles an engine runs before a failure.
+   Computed per engine as the mean segment length across all segments.
+   Formula: MTBF = Σ operational_cycles_per_segment / n_segments
+
+ MTTR (Mean Time To Repair)
+   Average number of cycles spent repairing after a failure.
+   Computed per engine as the mean repair duration across all repair events.
+   Formula: MTTR = Σ repair_duration_per_event / n_repair_events
+
+ MTU (Mean Time to Unplanned failure)
+   In this dataset all failures are unplanned (engines run to failure).
+   Therefore MTU = MTBF.
+   In a real deployment with scheduled maintenance, only unplanned failures
+   would count, making MTU ≥ MTBF.
+
+ Availability
+   Proportion of calendar time the engine is operational.
+   Formula: A = MTBF / (MTBF + MTTR)   [expressed as %]
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ SUMMARY STATISTICS (training engines)
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ Enriched rows         : 22,161
+ Running rows          : 20,631
+ Repair (downtime) rows: 1,530
+ Failure events        : 298
+ Repair events         : 198
+
+ Defect distribution (failure events):
+defect_type
+unclassified            157
+overheating              95
+wear                     29
+bearing_misalignment     17
+
+ Fleet-level KPIs:
+   Mean MTBF        : 75.7 cycles
+   Mean MTTR        : 7.4 cycles
+   Mean Availability: 93.1 %
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ LIMITATIONS & CAVEATS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ • Repair durations are SIMULATED, not measured. They reflect assumed
+   domain knowledge and should be replaced with real maintenance logs
+   if available.
+ • Defect labels are RULE-BASED proxies. The original CMAPSS dataset has
+   only one real fault mode (HPC degradation). The three defect classes
+   created here are soft mappings via sensor correlates — not ground truth.
+ • Segment boundaries are randomly chosen. Real maintenance intervals would
+   follow planned schedules or alarm thresholds.
+ • The test set is NOT enhanced here because true failure cycles are unknown
+   (only the RUL at cut-off is given). A separate inference step would be
+   needed to project test engines into this framework.
+ • "virtual_cycle" is an artificial clock. It is consistent within one
+   engine but should NOT be compared across engines without normalisation.
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+ RANDOM SEED : 42
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
