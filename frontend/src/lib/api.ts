@@ -45,11 +45,16 @@ export async function predictRul(sequence: number[][]): Promise<PredictiveRespon
   return body;
 }
 
-export async function sendChatMessage(message: string): Promise<{ reply: string; context_available: boolean }> {
+export type ChatMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
+
+export async function sendChatMessage(message: string, history: ChatMessage[] = []): Promise<{ reply: string }> {
   const res = await fetch(`${API_BASE_URL}/api/chatbot/message`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify({ message, history }),
   });
 
   const body = await res.json().catch(() => ({}));
