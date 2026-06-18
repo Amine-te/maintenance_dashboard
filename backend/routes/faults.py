@@ -20,7 +20,7 @@ def sanitize_for_json(records):
 
 def get_csv_fallback():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    event_file = os.path.join(base_dir, "enhanced_data", "event_log.csv")
+    event_file = os.path.join(base_dir, "data", "processed", "event_log.csv")
     if os.path.exists(event_file):
         df = pd.read_csv(event_file)
         return sanitize_for_json(df.to_dict('records'))

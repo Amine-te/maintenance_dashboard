@@ -24,7 +24,7 @@ _cached: Optional[FD001Scalers] = None
 
 def _load_train_raw_df() -> pd.DataFrame:
     root_dir = Path(__file__).resolve().parents[2]
-    train_path = root_dir / "enhanced_data" / "train_raw.txt"
+    train_path = root_dir / "data" / "raw" / "train_raw.txt"
     if not train_path.exists():
         raise HTTPException(status_code=500, detail=f"Training file not found at '{train_path}'.")
 

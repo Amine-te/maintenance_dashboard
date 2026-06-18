@@ -11,7 +11,7 @@ def ingest_data():
     db = client[DB_NAME]
 
     base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    enhanced_data_dir = os.path.join(base_dir, "enhanced_data")
+    enhanced_data_dir = os.path.join(base_dir, "data", "processed")
 
     # 1. Ingest KPI Summary
     kpi_file = os.path.join(enhanced_data_dir, "kpi_summary.csv")

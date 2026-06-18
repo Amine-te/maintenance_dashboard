@@ -23,7 +23,7 @@ def sanitize_for_json(records):
 
 def load_csv():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    ts_file = os.path.join(base_dir, "enhanced_data", "enriched_timeseries.csv")
+    ts_file = os.path.join(base_dir, "data", "processed", "enriched_timeseries.csv")
     if os.path.exists(ts_file):
         return pd.read_csv(ts_file)
     return None

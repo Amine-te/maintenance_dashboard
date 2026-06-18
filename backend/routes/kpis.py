@@ -7,7 +7,7 @@ router = APIRouter()
 
 def get_csv_fallback():
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    kpi_file = os.path.join(base_dir, "enhanced_data", "kpi_summary.csv")
+    kpi_file = os.path.join(base_dir, "data", "processed", "kpi_summary.csv")
     if os.path.exists(kpi_file):
         df = pd.read_csv(kpi_file)
         return df.to_dict('records')
